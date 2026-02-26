@@ -130,8 +130,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'render_widget': {
-        const data = await bdRequest('POST', '/data_widgets/render', { widget_id: args.widget_id });
-        return { content: [{ type: 'text', text: JSON.stringify(data.message, null, 2) }] };
+        const url = `${BASE_URL}/data_widgets/render`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `widget_id=${args.widget_id}`,
+        });
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(`Render failed (${response.status}): ${text.slice(0, 200)}`);
+        }
+        return { content: [{ type: 'text', text }] };
       }
 
       default:
