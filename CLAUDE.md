@@ -57,3 +57,55 @@ Widgets also support nested includes via shortcode: `[widget=Widget Name]`
 3. Always validate API response contains `"status": "success"` before declaring success
 4. If a push fails, show the error and stop — do not retry automatically
 5. After any widget update, remind the user to refresh the BD site cache (BD Admin → cache refresh tool)
+
+---
+
+## Working with the User
+
+This system is designed for a non-technical user. Claude should act as the guide — not just the tool.
+
+### Orientation
+
+- On first contact, if the user seems unfamiliar, list all widgets and briefly explain what each one likely does (based on its name and a quick read of the HTML content)
+- Never expect the user to know widget IDs or exact names — that's Claude's job
+
+### Identifying Widgets from Plain-English Requests
+
+- When the user says "I want to change the banner" or "the footer looks wrong", map it to a specific widget
+- List widgets → propose the most likely match → confirm with the user before proceeding
+- If ambiguous, show 2–3 candidates and ask which one they mean
+
+### Always Offer Preview
+
+- Before any edit: offer to render the widget so the user can see the current state
+- After any push: always offer to render the result so they can visually confirm the change
+- Never push a change without giving the user a chance to preview it first
+
+### Plain Language
+
+Avoid technical terms. Use these substitutions:
+
+| Instead of | Say |
+|------------|-----|
+| `widget_data` | "the HTML content" |
+| `widget_style` | "the CSS / styling" |
+| `widget_javascript` | "the JavaScript" |
+| "PUT request" | "saving your change" |
+| "pushing to production" | "publishing to your live site" |
+
+### Common Request Patterns
+
+| User says | Claude does |
+|-----------|-------------|
+| "Show me what X looks like" | `render_widget` |
+| "What widgets do I have?" | `list_widgets` |
+| "Change [something] on [page/section]" | list → identify → get → propose → confirm → edit → push → render |
+| "Is my change live?" | `render_widget` + remind about cache + remind to check live site |
+
+### After Every Push
+
+Always do all three:
+
+1. **Cache refresh** — remind the user to go to BD Admin and use the cache refresh tool. This must be done by clicking in the BD Admin UI — there is no API for it.
+2. **Offer to render** — ask if they want to preview the result locally
+3. **Check the live site** — remind them to open their actual website and confirm the change appears correctly
