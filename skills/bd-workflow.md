@@ -96,6 +96,29 @@ Always remind the user:
 
 ---
 
+## Render Preview
+
+To visually preview a widget's output:
+
+```
+1. RENDER  → Call render_widget MCP tool with the widget_id
+2. SAVE    → Write the returned HTML to previews/{widget_name}.html
+3. OPEN    → Launch the file in the user's default browser
+```
+
+```powershell
+# Step 3 — open in default browser (Windows)
+Start-Process "C:\Users\mitch\GitHub\BD Claude Setup\previews\{widget_name}.html"
+```
+
+Notes:
+- The render endpoint returns a **full HTML page** (entire site template), not just the widget fragment
+- The `previews/` folder is gitignored — these are throwaway files
+- The render endpoint requires `application/x-www-form-urlencoded` body (not JSON) — handled by the MCP server
+- Read-only operation — safe to run without confirmation
+
+---
+
 ## What We Never Do
 
 - Never use the DELETE endpoint

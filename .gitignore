@@ -12,3 +12,9 @@ Thumbs.db
 
 # Claude Code local state
 .claude/
+
+# Widget render previews (throwaway files)
+previews/
+
+# Debug/test scripts
+test-render*.ps1
