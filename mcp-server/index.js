@@ -94,11 +94,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_widget',
-      description: 'Fetch a single widget by ID or name, returning all three code fields and metadata. Always call this before update_widget.',
+      description: 'Fetch a single widget by ID or name, saving files to workspace/. If local workspace files already exist (unpushed edits), returns a warning — call again with force: true only after the user confirms they want to discard local changes.',
       inputSchema: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'Widget ID (numeric) or exact widget name' },
+          id:    { type: 'string',  description: 'Widget ID (numeric) or exact widget name' },
+          force: { type: 'boolean', description: 'If true, overwrite existing workspace files without warning. Only pass after explicit user confirmation.' },
         },
         required: ['id'],
       },
@@ -150,8 +151,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const data = await bdRequest('GET', `/data_widgets/get/${encodeURIComponent(args.id)}`);
         const w = data.message[0];
 
-        // Save code fields to workspace — content never returned to LLM
+        // Guard: warn before overwriting local edits
         const dir = workspaceDir(w.widget_name);
+        if (!args.force && fs.existsSync(dir)) {
+          const hasEdits = ['data.html', 'style.css', 'javascript.js'].some(f => {
+            const fp = path.join(dir, f);
+            return fs.existsSync(fp) && fs.readFileSync(fp, 'utf8').trim().length > 0;
+          });
+          if (hasEdits) {
+            return {
+              content: [{ type: 'text', text: `⚠️ WARNING: Local workspace files already exist for "${w.widget_name}" and may contain unpushed edits. Re-fetching will overwrite them with the live version from BD.\n\nTell the user this and ask if they want to discard local changes. If they confirm, call get_widget again with force: true.` }],
+            };
+          }
+        }
+
+        // Save code fields to workspace — content never returned to LLM
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, 'data.html'),       w.widget_data       ?? '', 'utf8');
         fs.writeFileSync(path.join(dir, 'style.css'),       w.widget_style      ?? '', 'utf8');

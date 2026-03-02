@@ -50,6 +50,14 @@ Read individual files with the `Read` tool as needed. Do not read all three unle
 
 If the widget name is ambiguous or unconfirmed, fetch the full list first and ask the user to identify which widget they mean.
 
+**Re-fetch guard:** If `get_widget` returns a `⚠️ WARNING` about existing local files, stop and tell the user in plain language:
+
+> "You have unsaved local changes to this widget. Fetching the live version will overwrite them. Do you want to discard your local changes and reload from the site?"
+
+Only call `get_widget` with `force: true` after explicit user confirmation. Never pass `force: true` on your own initiative.
+
+**Push staleness risk:** There is no version check on push. If the widget was edited on BD between your fetch and your push, your push will silently overwrite those changes. Mention this to the user if the session has been open for a long time before pushing.
+
 ---
 
 ## Proposing Changes
