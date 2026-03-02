@@ -1,6 +1,6 @@
 # Brilliant Directories API Reference
 
-> **Note:** Claude interacts with the BD API via MCP tools (`list_widgets`, `get_widget`, `update_widget`, `render_widget`). This document is background reference for understanding the underlying API or extending the MCP server.
+> **Note:** Claude interacts with the BD API via MCP tools (`list_widgets`, `get_widget`, `push_widget`, `render_widget`). This document is background reference for understanding the underlying API or extending the MCP server.
 
 ---
 
@@ -73,15 +73,13 @@ The DELETE endpoint exists in the BD API but is **never used** and is not expose
 
 All three code fields are required. Omitting one will clear it.
 
-```json
-{
-  "widget_id": 29,
-  "widget_name": "Hello World",
-  "widget_data": "<p>new html</p>",
-  "widget_style": ".hello { color: red; }",
-  "widget_javascript": ""
-}
+Body must be sent as `application/x-www-form-urlencoded` (not JSON).
+
 ```
+widget_id=29&widget_name=Hello+World&widget_data=%3Cp%3Enew+html%3C%2Fp%3E&widget_style=.hello+%7B+color%3A+red%3B+%7D&widget_javascript=
+```
+
+The MCP server handles form-encoding automatically.
 
 ---
 

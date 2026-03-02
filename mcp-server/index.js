@@ -2,8 +2,16 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import fs from 'fs';
+import path from 'path';
+import { exec } from 'child_process';
+import { fileURLToPath } from 'url';
 
-const API_KEY = process.env.BD_API_KEY;
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PREVIEWS_DIR  = path.join(PROJECT_ROOT, 'previews');
+const WORKSPACE_DIR = path.join(PROJECT_ROOT, 'workspace');
+
+const API_KEY  = process.env.BD_API_KEY;
 const SITE_URL = process.env.BD_SITE_URL?.replace(/\/$/, '');
 
 if (!API_KEY || !SITE_URL) {
@@ -13,23 +21,36 @@ if (!API_KEY || !SITE_URL) {
 
 const BASE_URL = `${SITE_URL}/api/v2`;
 
-async function bdRequest(method, path, body) {
-  const url = `${BASE_URL}${path}`;
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+async function bdRequest(method, endpoint, body) {
   const options = {
     method,
-    headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+    headers: { 'X-Api-Key': API_KEY },
   };
-  if (body) options.body = JSON.stringify(body);
+  if (body) {
+    options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    options.body = new URLSearchParams(body).toString();
+  }
 
-  const response = await fetch(url, options);
+  const response = await fetch(`${BASE_URL}${endpoint}`, options);
   const data = await response.json();
 
   if (data.status !== 'success') {
     throw new Error(typeof data.message === 'string' ? data.message : JSON.stringify(data.message));
   }
-
   return data;
 }
+
+function toSafeName(name) {
+  return name.replace(/[<>:"/\\|?*]/g, '-');
+}
+
+function workspaceDir(widgetName) {
+  return path.join(WORKSPACE_DIR, toSafeName(widgetName));
+}
+
+// ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
   { name: 'bd-widget-manager', version: '1.0.0' },
@@ -55,29 +76,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: 'update_widget',
-      description: 'Push updated code to a widget. Requires all three code fields — omitting one will clear it. Always fetch the widget first.',
+      name: 'push_widget',
+      description: 'Read workspace/{name}/ files and push to BD API. Call after editing workspace files with the Edit tool. Content never passes through the LLM.',
       inputSchema: {
         type: 'object',
         properties: {
-          widget_id:         { type: 'number', description: 'Numeric widget ID' },
-          widget_name:       { type: 'string', description: 'Exact widget name' },
-          widget_data:       { type: 'string', description: 'HTML/PHP content' },
-          widget_style:      { type: 'string', description: 'CSS content' },
-          widget_javascript: { type: 'string', description: 'JavaScript content (include <script> tags)' },
+          widget_id:   { type: 'number', description: 'Numeric widget ID' },
+          widget_name: { type: 'string', description: 'Exact widget name' },
         },
-        required: ['widget_id', 'widget_name', 'widget_data', 'widget_style', 'widget_javascript'],
+        required: ['widget_id', 'widget_name'],
       },
     },
     {
       name: 'render_widget',
-      description: 'Render a widget server-side and return its HTML output.',
+      description: 'Render a widget server-side, save to previews/{name}.html, and open in the default browser. HTML never passes through the LLM.',
       inputSchema: {
         type: 'object',
         properties: {
-          widget_id: { type: 'number', description: 'Numeric widget ID' },
+          widget_id:   { type: 'number', description: 'Numeric widget ID' },
+          widget_name: { type: 'string', description: 'Exact widget name (used for the filename)' },
         },
-        required: ['widget_id'],
+        required: ['widget_id', 'widget_name'],
       },
     },
   ],
@@ -88,6 +107,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+
       case 'list_widgets': {
         const data = await bdRequest('GET', '/data_widgets/get');
         const widgets = data.message.map(w => ({
@@ -101,46 +121,79 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_widget': {
         const data = await bdRequest('GET', `/data_widgets/get/${encodeURIComponent(args.id)}`);
         const w = data.message[0];
+
+        // Save code fields to workspace — content never returned to LLM
+        const dir = workspaceDir(w.widget_name);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'data.html'),       w.widget_data       ?? '', 'utf8');
+        fs.writeFileSync(path.join(dir, 'style.css'),       w.widget_style      ?? '', 'utf8');
+        fs.writeFileSync(path.join(dir, 'javascript.js'),   w.widget_javascript ?? '', 'utf8');
+
+        const safe = toSafeName(w.widget_name);
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
-              widget_id:         w.widget_id,
-              widget_name:       w.widget_name,
-              date_updated:      w.date_updated,
-              widget_data:       w.widget_data,
-              widget_style:      w.widget_style,
-              widget_javascript: w.widget_javascript,
+              widget_id:    w.widget_id,
+              widget_name:  w.widget_name,
+              date_updated: w.date_updated,
+              files: {
+                data:       `workspace/${safe}/data.html`,
+                style:      `workspace/${safe}/style.css`,
+                javascript: `workspace/${safe}/javascript.js`,
+              },
             }, null, 2),
           }],
         };
       }
 
-      case 'update_widget': {
+      case 'push_widget': {
+        const dir = workspaceDir(args.widget_name);
+
+        if (!fs.existsSync(dir)) {
+          throw new Error(`No workspace found for "${args.widget_name}". Call get_widget first.`);
+        }
+
+        // Read from disk — content never passes through LLM
+        const widget_data       = fs.readFileSync(path.join(dir, 'data.html'),     'utf8');
+        const widget_style      = fs.readFileSync(path.join(dir, 'style.css'),     'utf8');
+        const widget_javascript = fs.readFileSync(path.join(dir, 'javascript.js'), 'utf8');
+
         await bdRequest('PUT', '/data_widgets/update', {
-          widget_id:         args.widget_id,
-          widget_name:       args.widget_name,
-          widget_data:       args.widget_data,
-          widget_style:      args.widget_style,
-          widget_javascript: args.widget_javascript,
+          widget_id:   args.widget_id,
+          widget_name: args.widget_name,
+          widget_data,
+          widget_style,
+          widget_javascript,
         });
+
         return {
-          content: [{ type: 'text', text: `Widget "${args.widget_name}" updated successfully.` }],
+          content: [{ type: 'text', text: `Widget "${args.widget_name}" pushed successfully. Remember to refresh the BD site cache.` }],
         };
       }
 
       case 'render_widget': {
-        const url = `${BASE_URL}/data_widgets/render`;
-        const response = await fetch(url, {
+        const response = await fetch(`${BASE_URL}/data_widgets/render`, {
           method: 'POST',
           headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `widget_id=${args.widget_id}`,
         });
-        const text = await response.text();
+        const raw = await response.text();
         if (!response.ok) {
-          throw new Error(`Render failed (${response.status}): ${text.slice(0, 200)}`);
+          throw new Error(`Render failed (${response.status}): ${raw.slice(0, 200)}`);
         }
-        return { content: [{ type: 'text', text }] };
+
+        // Rewrite root-relative URLs so local preview loads images/CSS/JS
+        const html = raw
+          .replace(/(src|href)="\//g,  `$1="${SITE_URL}/`)
+          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`);
+
+        const filePath = path.join(PREVIEWS_DIR, `${toSafeName(args.widget_name)}.html`);
+        fs.mkdirSync(PREVIEWS_DIR, { recursive: true });
+        fs.writeFileSync(filePath, html, 'utf8');
+        exec(`start "" "${filePath}"`);
+
+        return { content: [{ type: 'text', text: `Opened previews/${toSafeName(args.widget_name)}.html in browser.` }] };
       }
 
       default:

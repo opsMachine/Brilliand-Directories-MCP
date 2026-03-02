@@ -22,26 +22,31 @@ This gives the user a clear picture of what exists before any edits begin.
 Every widget edit follows this exact sequence. Do not skip or reorder steps.
 
 ```
-1. FETCH   → Get the widget's current state from the API
-2. SHOW    → Display current widget_name, date_updated, and all three code fields
-3. PROPOSE → Show the exact changes you intend to make (diff or before/after)
-4. CONFIRM → Wait for explicit user approval ("yes", "go ahead", "push it", etc.)
-5. PUSH    → Send the PUT request to the API
-6. VERIFY  → Confirm the response contains "status": "success"
-7. REMIND  → Tell user to refresh the BD site cache
+1. FETCH   → get_widget → saves files to workspace/{name}/, returns metadata + paths
+2. READ    → use Read tool on the relevant file(s) — only what's needed
+3. PROPOSE → show the exact changes you intend to make (diff or before/after)
+4. CONFIRM → wait for explicit user approval ("yes", "go ahead", "push it", etc.)
+5. EDIT    → use Edit tool on workspace/{name}/ files
+6. PUSH    → push_widget → reads from workspace, sends PUT to BD API
+7. VERIFY  → confirm response is "pushed successfully"
+8. REMIND  → tell user to refresh the BD site cache
 ```
 
 Never jump to step 5 without completing steps 1–4.
+
+Large content never passes through the LLM as tool output — `get_widget` saves to disk,
+`push_widget` reads from disk. The LLM only touches content via `Read` and `Edit` tool calls.
 
 ---
 
 ## Fetch Rules
 
-When fetching a widget, always display:
+When fetching a widget, `get_widget` returns only:
 
-- `widget_name` — so user can confirm you have the right widget
-- `date_updated` — so user knows how fresh the current state is
-- All three code fields (`widget_data`, `widget_style`, `widget_javascript`)
+- `widget_id`, `widget_name`, `date_updated` — confirm you have the right widget
+- `files` — paths to the three workspace files
+
+Read individual files with the `Read` tool as needed. Do not read all three unless necessary.
 
 If the widget name is ambiguous or unconfirmed, fetch the full list first and ask the user to identify which widget they mean.
 
@@ -100,21 +105,21 @@ Always remind the user:
 
 To visually preview a widget's output:
 
+The MCP server handles everything — HTML never enters the LLM context.
+
 ```
-1. RENDER  → Call render_widget MCP tool with the widget_id
-2. SAVE    → Write the returned HTML to previews/{widget_name}.html
-3. OPEN    → Launch the file in the user's default browser
+render_widget(widget_id, widget_name)
+  → BD API returns HTML
+  → MCP server writes previews/{widget_name}.html
+  → MCP server opens file in default browser
+  → Returns one-line confirmation to Claude
 ```
 
-```powershell
-# Step 3 — open in default browser (Windows)
-Start-Process "C:\Users\mitch\GitHub\BD Claude Setup\previews\{widget_name}.html"
-```
+Pass both `widget_id` (number) and `widget_name` (exact name from list) — the name is used for the filename.
 
 Notes:
 - The render endpoint returns a **full HTML page** (entire site template), not just the widget fragment
 - The `previews/` folder is gitignored — these are throwaway files
-- The render endpoint requires `application/x-www-form-urlencoded` body (not JSON) — handled by the MCP server
 - Read-only operation — safe to run without confirmation
 
 ---
@@ -128,19 +133,15 @@ Notes:
 
 ---
 
-## Quick Reference: API Calls
+## Quick Reference: MCP Tools
 
-```bash
-# List all widgets
-curl -s -H "X-Api-Key: $BD_API_KEY" "$BD_SITE_URL/api/v2/data_widgets/get"
+Use the MCP tools instead of calling the API directly. They handle authentication, content encoding, and file management.
 
-# Fetch single widget
-curl -s -H "X-Api-Key: $BD_API_KEY" "$BD_SITE_URL/api/v2/data_widgets/get/{id}"
-
-# Update widget
-curl -s -X PUT \
-  -H "X-Api-Key: $BD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"widget_id": ID, "widget_name": "NAME", "widget_data": "...", "widget_style": "...", "widget_javascript": "..."}' \
-  "$BD_SITE_URL/api/v2/data_widgets/update"
 ```
+list_widgets()                               → List all widgets
+get_widget(id)                               → Fetch widget, save to workspace/
+push_widget(widget_id, widget_name)          → Read workspace, push to BD API
+render_widget(widget_id, widget_name)        → Render to HTML, open in browser
+```
+
+The MCP server handles all content as form-encoded form-data. No manual curl requests needed.

@@ -13,8 +13,9 @@ Thumbs.db
 # Claude Code local state
 .claude/
 
-# Widget render previews (throwaway files)
+# Widget render previews and edit workspace (throwaway files)
 previews/
+workspace/
 
 # Debug/test scripts
 test-render*.ps1
