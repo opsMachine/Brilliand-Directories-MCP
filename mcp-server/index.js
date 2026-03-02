@@ -3,6 +3,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -50,6 +51,33 @@ function workspaceDir(widgetName) {
   return path.join(WORKSPACE_DIR, toSafeName(widgetName));
 }
 
+// ── Preview server (live-reload) ────────────────────────────────────────────
+
+const PREVIEW_PORT = 4444;
+let previewServer = null;
+let lastRenderTime = 0;
+const openedPreviews = new Set();
+
+function ensurePreviewServer() {
+  if (previewServer) return;
+  previewServer = http.createServer((req, res) => {
+    if (req.url === '/last-render') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      return res.end(String(lastRenderTime));
+    }
+    const file = req.url.replace(/^\//, '').split('?')[0];
+    const filePath = path.join(PREVIEWS_DIR, file);
+    if (!file || !fs.existsSync(filePath)) {
+      res.writeHead(404);
+      return res.end('Not found');
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(fs.readFileSync(filePath));
+  });
+  previewServer.on('error', () => { previewServer = null; });
+  previewServer.listen(PREVIEW_PORT);
+}
+
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -89,7 +117,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'render_widget',
-      description: 'Render a widget server-side, save to previews/{name}.html, and open in the default browser. HTML never passes through the LLM.',
+      description: 'Render a widget server-side and open in the browser via a local preview server. First render opens a new tab; subsequent renders auto-refresh the existing tab. HTML never passes through the LLM.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -183,17 +211,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error(`Render failed (${response.status}): ${raw.slice(0, 200)}`);
         }
 
+        ensurePreviewServer();
+        lastRenderTime = Date.now();
+
         // Rewrite root-relative URLs so local preview loads images/CSS/JS
+        // Inject polling script so the tab auto-refreshes on subsequent renders
+        const reloadScript = `<script>(function(){var t="${lastRenderTime}";setInterval(function(){fetch("/last-render").then(function(r){return r.text()}).then(function(s){if(s!==t)location.reload()})},1000)})();</script>`;
         const html = raw
           .replace(/(src|href)="\//g,  `$1="${SITE_URL}/`)
-          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`);
+          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`)
+          + reloadScript;
 
-        const filePath = path.join(PREVIEWS_DIR, `${toSafeName(args.widget_name)}.html`);
+        const safeName = toSafeName(args.widget_name);
+        const filePath = path.join(PREVIEWS_DIR, `${safeName}.html`);
         fs.mkdirSync(PREVIEWS_DIR, { recursive: true });
         fs.writeFileSync(filePath, html, 'utf8');
-        exec(`start "" "${filePath}"`);
 
-        return { content: [{ type: 'text', text: `Opened previews/${toSafeName(args.widget_name)}.html in browser.` }] };
+        const url = `http://localhost:${PREVIEW_PORT}/${safeName}.html`;
+        const isNew = !openedPreviews.has(args.widget_name);
+        if (isNew) {
+          openedPreviews.add(args.widget_name);
+          exec(`start "" "${url}"`);
+        }
+
+        return {
+          content: [{ type: 'text', text: isNew
+            ? `Opened preview at ${url} — will auto-refresh on future renders.`
+            : `Preview updated — browser tab refreshed automatically.`,
+          }],
+        };
       }
 
       default:
