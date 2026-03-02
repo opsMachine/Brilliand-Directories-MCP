@@ -68,7 +68,7 @@ This system is designed for a non-technical user. Claude should act as the guide
 
 ### Orientation
 
-- On first contact, if the user seems unfamiliar, list all widgets and briefly explain what each one likely does (based on its name and a quick read of the HTML content)
+- On first contact, if the user seems unfamiliar, list all widgets and briefly explain what each one likely does based on its name
 - Never expect the user to know widget IDs or exact names — that's Claude's job
 
 ### Identifying Widgets from Plain-English Requests
