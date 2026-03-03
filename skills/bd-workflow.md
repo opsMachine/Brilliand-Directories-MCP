@@ -156,6 +156,30 @@ Notes:
 
 ---
 
+## Preview Limitations
+
+The local preview renders real PHP/database content via BD's API, but **BD's global platform CSS is not available locally**. This causes known cosmetic issues that are NOT bugs:
+
+- **Nav bar**: text appears white-on-white because BD's global stylesheet provides the dark nav background, which our preview doesn't load. Looks correct on the live site.
+- Any styling that comes from BD's platform-level CSS (not the widget's own `style.css`) won't appear in preview.
+
+Do not investigate or attempt to fix these — they are expected preview limitations.
+
+---
+
+## Site Notes
+
+- **Site:** `https://www.example.com/` — Brilliant Directories membership site
+- **Client:** Non-technical — expects plain-language guidance, not widget IDs or API terminology
+
+### Widget Notes
+
+- **Bootstrap Theme Framework** (id: 17) — site-wide header/nav/footer. Nav bar appears white-on-white in preview (known preview limitation — looks correct on live site).
+- **Partner Orgs Banner 2026** (id: 209) — queries BD database for partner org records. Shows "unavailable" in local preview because the render API doesn't provide database context. Works fine on the live site.
+- **Referral Codes Explainer Sign Up** (id: 28) — static content widget, renders correctly in local preview. About referral codes, designated recipients, sector development fund.
+
+---
+
 ## Quick Reference: MCP Tools
 
 Use the MCP tools instead of calling the API directly. They handle authentication, content encoding, and file management.

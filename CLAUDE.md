@@ -27,7 +27,9 @@ At the start of every session, always:
 2. Check if `mcp-server/node_modules` exists. If it does not, ask the user for permission to run `npm install` inside `mcp-server/`. If they approve, run it. If it fails, tell the user to install Node.js from https://nodejs.org (LTS version) and then try again.
 3. List all available custom widgets using the `list_widgets` MCP tool so the user knows what exists before doing anything
 
-**During the session:** When you learn stable facts about the project — which widgets do what, site-specific quirks, client preferences, widget naming patterns — save them to memory. Use the `Write`/`Edit` tools on the memory file at `~/.claude/projects/C--Users-mitch-GitHub-BD-Claude-Setup/memory/MEMORY.md`. Do this as you go, not just at the end.
+**During the session:** Save facts to the right place:
+- **Environment-specific** (API quirks, local machine notes) → `~/.claude/projects/C--Users-mitch-GitHub-BD-Claude-Setup/memory/MEMORY.md`
+- **Project knowledge** (widget notes, site quirks, preview limitations) → `skills/bd-workflow.md` under the relevant section
 
 ---
 
