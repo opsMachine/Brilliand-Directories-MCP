@@ -44,7 +44,7 @@ async function bdRequest(method, endpoint, body) {
 }
 
 function toSafeName(name) {
-  return name.replace(/[<>:"/\\|?*]/g, '-');
+  return name.replace(/[<>:"/\\|?*\s]/g, '-');
 }
 
 function workspaceDir(widgetName) {
@@ -65,7 +65,7 @@ function ensurePreviewServer() {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       return res.end(String(lastRenderTime));
     }
-    const file = req.url.replace(/^\//, '').split('?')[0];
+    const file = decodeURIComponent(req.url.replace(/^\//, '').split('?')[0]);
     const filePath = path.join(PREVIEWS_DIR, file);
     if (!file || !fs.existsSync(filePath)) {
       res.writeHead(404);
