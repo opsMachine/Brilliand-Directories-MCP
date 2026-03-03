@@ -27,9 +27,10 @@ Every widget edit follows this exact sequence. Do not skip or reorder steps.
 3. PROPOSE → show the exact changes you intend to make (diff or before/after)
 4. CONFIRM → wait for explicit user approval ("yes", "go ahead", "push it", etc.)
 5. EDIT    → use Edit tool on workspace/{name}/ files
-6. PUSH    → push_widget → reads from workspace, sends PUT to BD API
-7. VERIFY  → confirm response is "pushed successfully"
-8. REMIND  → tell user to refresh the BD site cache
+6. RENDER  → render_widget → rebuilds preview from local workspace, browser auto-refreshes
+7. PUSH    → push_widget → reads from workspace, sends PUT to BD API
+8. VERIFY  → confirm response is "pushed successfully"
+9. REMIND  → tell user to refresh the BD site cache
 ```
 
 Never jump to step 5 without completing steps 1–4.
@@ -111,24 +112,38 @@ Always remind the user:
 
 ## Render Preview
 
-To visually preview a widget's output:
-
-The MCP server handles everything — HTML never enters the LLM context.
+`render_widget` uses a **hybrid approach**: BD's server executes the PHP to produce real content, then your local CSS and JavaScript edits are applied on top.
 
 ```
-render_widget(widget_id, widget_name)
-  → BD API returns HTML
-  → MCP server writes previews/{widget_name}.html
-  → MCP server opens file in default browser
-  → Returns one-line confirmation to Claude
+render_widget(widget_name)
+  → reads workspace/{name}/meta.json for the widget ID
+  → calls BD API to render the widget — PHP executes, real data loads
+  → injects local style.css + javascript.js on top of the rendered output
+  → builds full HTML page with Bootstrap 3
+  → writes to previews/{name}.html
+  → first call opens browser at localhost:4444/{name}.html
+  → subsequent calls auto-refresh the existing tab
 ```
 
-Pass both `widget_id` (number) and `widget_name` (exact name from list) — the name is used for the filename.
+**What you see vs. what's live:**
+
+| Change type | Visible in preview? | Needs push first? |
+|-------------|--------------------|--------------------|
+| CSS edits (`style.css`) | Yes — immediately | No |
+| JS edits (`javascript.js`) | Yes — immediately | No |
+| HTML edits (`data.html`) | No — BD renders from live version | Yes — push first, then re-render |
+
+This means:
+- If you're only changing styling or JavaScript, re-render to see the result before pushing
+- If you're changing the HTML content (`data.html`), push first then re-render to confirm
+
+**Explaining this to the user:**
+> "The preview fetches the real content from your live site, then applies your local CSS and JavaScript changes on top. So you can see exactly how your styling changes will look with real data — without having to push first."
 
 Notes:
-- The render endpoint returns a **full HTML page** (entire site template), not just the widget fragment
-- The `previews/` folder is gitignored — these are throwaway files
-- Read-only operation — safe to run without confirmation
+- `get_widget` must be called first to populate the workspace (creates `meta.json`)
+- The `previews/` folder is gitignored — throwaway files
+- Re-render after every CSS/JS edit to see the change in the browser
 
 ---
 
@@ -149,7 +164,7 @@ Use the MCP tools instead of calling the API directly. They handle authenticatio
 list_widgets()                               → List all widgets
 get_widget(id)                               → Fetch widget, save to workspace/
 push_widget(widget_id, widget_name)          → Read workspace, push to BD API
-render_widget(widget_id, widget_name)        → Render to HTML, open in browser
+render_widget(widget_name)                   → Build preview from local workspace, open in browser
 ```
 
 The MCP server handles all content as form-encoded form-data. No manual curl requests needed.

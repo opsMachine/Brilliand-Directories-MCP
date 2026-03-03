@@ -118,14 +118,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'render_widget',
-      description: 'Render a widget server-side and open in the browser via a local preview server. First render opens a new tab; subsequent renders auto-refresh the existing tab. HTML never passes through the LLM.',
+      description: 'Build a local preview from workspace files and open in the browser. First render opens a new tab; subsequent renders auto-refresh the existing tab. Reads local workspace files — call get_widget first if workspace does not exist.',
       inputSchema: {
         type: 'object',
         properties: {
-          widget_id:   { type: 'number', description: 'Numeric widget ID' },
           widget_name: { type: 'string', description: 'Exact widget name (used for the filename)' },
         },
-        required: ['widget_id', 'widget_name'],
+        required: ['widget_name'],
       },
     },
   ],
@@ -170,6 +169,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         fs.writeFileSync(path.join(dir, 'data.html'),       w.widget_data       ?? '', 'utf8');
         fs.writeFileSync(path.join(dir, 'style.css'),       w.widget_style      ?? '', 'utf8');
         fs.writeFileSync(path.join(dir, 'javascript.js'),   w.widget_javascript ?? '', 'utf8');
+        fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ widget_id: w.widget_id, widget_name: w.widget_name }), 'utf8');
 
         const safe = toSafeName(w.widget_name);
         return {
@@ -215,47 +215,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'render_widget': {
-        const response = await fetch(`${BASE_URL}/data_widgets/render`, {
+        const dir = workspaceDir(args.widget_name);
+        if (!fs.existsSync(dir)) {
+          throw new Error(`No workspace found for "${args.widget_name}". Call get_widget first.`);
+        }
+
+        // Read meta.json for widget_id (saved by get_widget)
+        const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+
+        // Call BD API to render PHP — gets real database content
+        const renderResp = await fetch(`${BASE_URL}/data_widgets/render`, {
           method: 'POST',
           headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `widget_id=${args.widget_id}`,
+          body: `widget_id=${meta.widget_id}`,
         });
-        const raw = await response.text();
-        if (!response.ok) {
-          throw new Error(`Render failed (${response.status}): ${raw.slice(0, 200)}`);
-        }
+        const renderJson = JSON.parse(await renderResp.text());
+        let widgetHtml = renderJson.output ?? '';
+
+        // Read local CSS/JS overrides — these reflect any unsaved edits
+        const widgetCss = fs.readFileSync(path.join(dir, 'style.css'),    'utf8');
+        const widgetJs  = fs.readFileSync(path.join(dir, 'javascript.js'),'utf8');
 
         ensurePreviewServer();
         lastRenderTime = Date.now();
 
-        // BD render API returns JSON { output: "<widget html>" }
-        // Fall back to treating raw as full-page HTML if parsing fails
-        let widgetHtml;
-        try {
-          const json = JSON.parse(raw);
-          widgetHtml = json.output ?? '';
-        } catch {
-          widgetHtml = raw;
-        }
-
-        // Rewrite root-relative URLs so local preview loads images from live site
+        // Rewrite root-relative URLs so local preview loads assets from live site
         widgetHtml = widgetHtml
-          .replace(/(src|href)="\//g,  `$1="${SITE_URL}/`)
-          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`);
+          .replace(/(src|href)="\//g, `$1="${SITE_URL}/`)
+          .replace(/(src|href)='\//g, `$1='${SITE_URL}/`);
 
         const reloadScript = `<script>(function(){var t="${lastRenderTime}";setInterval(function(){fetch("/last-render").then(function(r){return r.text()}).then(function(s){if(s!==t)location.reload()})},1000)})();</script>`;
 
-        // Wrap fragment in a full page with Bootstrap 3 + Montserrat (matching BD's theme)
-        const isFullPage = /^\s*<!doctype/i.test(widgetHtml) || /^\s*<html/i.test(widgetHtml);
-        const html = isFullPage ? widgetHtml + reloadScript : `<!DOCTYPE html>
+        const html = `<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+  <style>${widgetCss}</style>
   <style>body { padding: 20px; font-family: Montserrat, sans-serif; }</style>
 </head><body>
 <div class="container-fluid">${widgetHtml}</div>
+${widgetJs}
 ${reloadScript}
 </body></html>`;
 
