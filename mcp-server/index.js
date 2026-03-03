@@ -228,13 +228,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ensurePreviewServer();
         lastRenderTime = Date.now();
 
-        // Rewrite root-relative URLs so local preview loads images/CSS/JS
-        // Inject polling script so the tab auto-refreshes on subsequent renders
-        const reloadScript = `<script>(function(){var t="${lastRenderTime}";setInterval(function(){fetch("/last-render").then(function(r){return r.text()}).then(function(s){if(s!==t)location.reload()})},1000)})();</script>`;
-        const html = raw
+        // BD render API returns JSON { output: "<widget html>" }
+        // Fall back to treating raw as full-page HTML if parsing fails
+        let widgetHtml;
+        try {
+          const json = JSON.parse(raw);
+          widgetHtml = json.output ?? '';
+        } catch {
+          widgetHtml = raw;
+        }
+
+        // Rewrite root-relative URLs so local preview loads images from live site
+        widgetHtml = widgetHtml
           .replace(/(src|href)="\//g,  `$1="${SITE_URL}/`)
-          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`)
-          + reloadScript;
+          .replace(/(src|href)='\//g,  `$1='${SITE_URL}/`);
+
+        const reloadScript = `<script>(function(){var t="${lastRenderTime}";setInterval(function(){fetch("/last-render").then(function(r){return r.text()}).then(function(s){if(s!==t)location.reload()})},1000)})();</script>`;
+
+        // Wrap fragment in a full page with Bootstrap 3 + Montserrat (matching BD's theme)
+        const isFullPage = /^\s*<!doctype/i.test(widgetHtml) || /^\s*<html/i.test(widgetHtml);
+        const html = isFullPage ? widgetHtml + reloadScript : `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+  <style>body { padding: 20px; font-family: Montserrat, sans-serif; }</style>
+</head><body>
+<div class="container-fluid">${widgetHtml}</div>
+${reloadScript}
+</body></html>`;
 
         const safeName = toSafeName(args.widget_name);
         const filePath = path.join(PREVIEWS_DIR, `${safeName}.html`);
