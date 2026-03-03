@@ -229,8 +229,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `widget_id=${meta.widget_id}`,
         });
-        const renderJson = JSON.parse(await renderResp.text());
-        let widgetHtml = renderJson.output ?? '';
+        const rawText = await renderResp.text();
+        let widgetHtml;
+        try {
+          const renderJson = JSON.parse(rawText);
+          widgetHtml = renderJson.output ?? '';
+        } catch {
+          // API returned raw HTML — extract body content if it's a full page
+          const bodyMatch = rawText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+          widgetHtml = bodyMatch ? bodyMatch[1] : rawText;
+        }
 
         // Read local CSS/JS overrides — these reflect any unsaved edits
         const widgetCss = fs.readFileSync(path.join(dir, 'style.css'),    'utf8');
