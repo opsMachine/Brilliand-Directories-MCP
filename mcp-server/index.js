@@ -92,7 +92,7 @@ function ensurePreviewServer() {
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'Brilliant Directories Widget MCP', version: '1.0.0' },
+  { name: 'Brilliant Directories Widgets MCP', version: '1.0.1' },
   { capabilities: { tools: {} } }
 );
 
