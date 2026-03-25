@@ -8,7 +8,18 @@ import path from 'path';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 
-const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MCP_DIR = path.dirname(fileURLToPath(import.meta.url));
+const LEGACY_PROJECT_ROOT = path.resolve(MCP_DIR, '..');
+
+function resolveProjectRoot() {
+  const raw = process.env.BD_PROJECT_ROOT;
+  if (raw != null && String(raw).trim() !== '') {
+    return path.resolve(process.cwd(), raw);
+  }
+  return LEGACY_PROJECT_ROOT;
+}
+
+const PROJECT_ROOT = resolveProjectRoot();
 const PREVIEWS_DIR  = path.join(PROJECT_ROOT, 'previews');
 const WORKSPACE_DIR = path.join(PROJECT_ROOT, 'workspace');
 
@@ -81,7 +92,7 @@ function ensurePreviewServer() {
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'bd-widget-manager', version: '1.0.0' },
+  { name: 'Brilliant Directories Widget MCP', version: '1.0.0' },
   { capabilities: { tools: {} } }
 );
 

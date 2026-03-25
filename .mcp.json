@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "bd-manager": {
+    "Brilliant Directories Widget MCP": {
       "command": "node",
       "args": ["./mcp-server/index.js"]
     }
