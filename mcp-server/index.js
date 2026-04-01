@@ -134,7 +134,7 @@ function ensurePreviewServer() {
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'Brilliant Directories Widgets MCP', version: '1.1.0' },
+  { name: 'Brilliant Directories Widgets MCP', version: '1.2.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -147,12 +147,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_widget',
-      description: 'Fetch a single widget by ID or name, saving files to workspace/. If existing workspace files would be overwritten, copies them to snapshots/ first (timestamped folder + snapshot-meta.json). If local workspace files already exist (unpushed edits), returns a warning — call again with force: true only after the user confirms they want to discard local changes.',
+      description: 'Fetch a single widget by ID or name, saving files to workspace/. If workspace/{name}/ already contains widget code (non-empty data.html, style.css, or javascript.js), the tool REFUSES to overwrite — the user must manually delete or rename that folder first, then call again. There is no force flag; agents cannot bypass this.',
       inputSchema: {
         type: 'object',
         properties: {
-          id:    { type: 'string',  description: 'Widget ID (numeric) or exact widget name' },
-          force: { type: 'boolean', description: 'If true, overwrite existing workspace files without warning. Only pass after explicit user confirmation.' },
+          id: { type: 'string', description: 'Widget ID (numeric) or exact widget name' },
         },
         required: ['id'],
       },
@@ -203,16 +202,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const data = await bdRequest('GET', `/data_widgets/get/${encodeURIComponent(args.id)}`);
         const w = data.message[0];
 
-        // Guard: warn before overwriting local edits
+        // Hard guard: never overwrite non-empty local widget files (no force flag — humans delete folder to refresh)
         const dir = workspaceDir(w.widget_name);
-        if (!args.force && fs.existsSync(dir)) {
+        if (fs.existsSync(dir)) {
           const hasEdits = ['data.html', 'style.css', 'javascript.js'].some(f => {
             const fp = path.join(dir, f);
             return fs.existsSync(fp) && fs.readFileSync(fp, 'utf8').trim().length > 0;
           });
           if (hasEdits) {
+            const safe = toSafeName(w.widget_name);
+            const rel = path.join('workspace', safe);
             return {
-              content: [{ type: 'text', text: `⚠️ WARNING: Local workspace files already exist for "${w.widget_name}" and may contain unpushed edits. Re-fetching will overwrite them with the live version from BD.\n\nTell the user this and ask if they want to discard local changes. If they confirm, call get_widget again with force: true.` }],
+              content: [{
+                type: 'text',
+                text:
+                  `BLOCKED: Local workspace already exists for "${w.widget_name}" (${rel}/).\n\n` +
+                  `To pull the live version from BD, the user must manually delete or move that folder, then call get_widget again.\n\n` +
+                  `There is no programmatic overwrite — this prevents automated agents from discarding local widget work.`,
+              }],
             };
           }
         }

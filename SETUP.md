@@ -54,9 +54,20 @@ Restart the IDE after changing it.
 The MCP copies `workspace/{widget}/` into `snapshots/{ISO-timestamp}_{widget_id}_{widget-name}/` **before**:
 
 - **`push_widget`** — pre-push backup of exactly what is about to go live.
-- **`get_widget`** — when it would **overwrite** an existing local workspace (after you confirm `force`, or when there are no “unpushed edits” so it overwrites silently).
+- **`get_widget`** — when it overwrites an existing (but empty) workspace folder, or after you manually cleared the folder — see below.
 
 Each snapshot includes **`snapshot-meta.json`** (`reason`, `widget_id`, `widget_name`, `created_at`).
+
+## Re-fetching a widget when `workspace/` already has code
+
+**There is no `force` flag.** If `workspace/{widget-name}/` already contains non-empty widget files, **`get_widget` will refuse** to overwrite them.
+
+To replace local files with the live BD version:
+
+1. **Manually delete or rename** `workspace/{widget-name}/` (in Explorer, or `rm -rf` in a terminal).
+2. Call **`get_widget`** again.
+
+This stops assistants from silently wiping local widget work.
 
 **Rollback (local):** copy files from a snapshot folder back into `workspace/{widget-name}/`, then `push_widget` if you need to restore production.
 
