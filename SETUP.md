@@ -37,6 +37,33 @@ Claude will automatically test the connection. You should see your widgets liste
 
 ---
 
+## Optional: `BD_PROJECT_ROOT`
+
+If set, widget files and snapshots are stored under that directory (usually your app repo root). Example: point it at the folder that contains `workspace/` so backups and edits live next to your Git project.
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("BD_PROJECT_ROOT", "C:\path\to\EML Website", "User")
+```
+
+Restart the IDE after changing it.
+
+---
+
+## Automatic snapshots (before risky operations)
+
+The MCP copies `workspace/{widget}/` into `snapshots/{ISO-timestamp}_{widget_id}_{widget-name}/` **before**:
+
+- **`push_widget`** — pre-push backup of exactly what is about to go live.
+- **`get_widget`** — when it would **overwrite** an existing local workspace (after you confirm `force`, or when there are no “unpushed edits” so it overwrites silently).
+
+Each snapshot includes **`snapshot-meta.json`** (`reason`, `widget_id`, `widget_name`, `created_at`).
+
+**Rollback (local):** copy files from a snapshot folder back into `workspace/{widget-name}/`, then `push_widget` if you need to restore production.
+
+**Git commits** are still recommended for intentional history and PRs; snapshots are automatic filesystem backups that do not require git.
+
+---
+
 ## Troubleshooting
 
 **"BD_API_KEY and BD_SITE_URL environment variables must be set"**

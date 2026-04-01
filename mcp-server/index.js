@@ -22,6 +22,7 @@ function resolveProjectRoot() {
 const PROJECT_ROOT = resolveProjectRoot();
 const PREVIEWS_DIR  = path.join(PROJECT_ROOT, 'previews');
 const WORKSPACE_DIR = path.join(PROJECT_ROOT, 'workspace');
+const SNAPSHOTS_DIR = path.join(PROJECT_ROOT, 'snapshots');
 
 const API_KEY  = process.env.BD_API_KEY;
 const SITE_URL = process.env.BD_SITE_URL?.replace(/\/$/, '');
@@ -62,6 +63,47 @@ function workspaceDir(widgetName) {
   return path.join(WORKSPACE_DIR, toSafeName(widgetName));
 }
 
+/**
+ * Copy current workspace/{widget}/ to snapshots/{timestamp}_{id}_{name}/ before destructive ops.
+ * Independent of git — rollback: copy snapshot folder contents back over workspace/{name}/.
+ * Returns absolute path to snapshot dir, or null if nothing to copy.
+ */
+function snapshotWidgetWorkspace(widgetName, widgetId, reason) {
+  const src = workspaceDir(widgetName);
+  if (!fs.existsSync(src)) return null;
+  const hasFiles = ['data.html', 'style.css', 'javascript.js', 'meta.json'].some((f) =>
+    fs.existsSync(path.join(src, f))
+  );
+  if (!hasFiles) return null;
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destName = `${stamp}_${widgetId}_${toSafeName(widgetName)}`;
+  let finalDest = path.join(SNAPSHOTS_DIR, destName);
+  let n = 0;
+  while (fs.existsSync(finalDest)) {
+    n += 1;
+    finalDest = path.join(SNAPSHOTS_DIR, `${destName}_${n}`);
+  }
+
+  fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+  fs.cpSync(src, finalDest, { recursive: true });
+  fs.writeFileSync(
+    path.join(finalDest, 'snapshot-meta.json'),
+    JSON.stringify(
+      {
+        reason,
+        widget_id: widgetId,
+        widget_name: widgetName,
+        created_at: new Date().toISOString(),
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  return finalDest;
+}
+
 // ── Preview server (live-reload) ────────────────────────────────────────────
 
 const PREVIEW_PORT = 4444;
@@ -92,7 +134,7 @@ function ensurePreviewServer() {
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'Brilliant Directories Widgets MCP', version: '1.0.1' },
+  { name: 'Brilliant Directories Widgets MCP', version: '1.1.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -105,7 +147,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'get_widget',
-      description: 'Fetch a single widget by ID or name, saving files to workspace/. If local workspace files already exist (unpushed edits), returns a warning — call again with force: true only after the user confirms they want to discard local changes.',
+      description: 'Fetch a single widget by ID or name, saving files to workspace/. If existing workspace files would be overwritten, copies them to snapshots/ first (timestamped folder + snapshot-meta.json). If local workspace files already exist (unpushed edits), returns a warning — call again with force: true only after the user confirms they want to discard local changes.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -117,7 +159,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'push_widget',
-      description: 'Read workspace/{name}/ files and push to BD API. Call after editing workspace files with the Edit tool. Content never passes through the LLM.',
+      description: 'Read workspace/{name}/ files and push to BD API. Before uploading, copies the current workspace folder to snapshots/ (pre-push backup). Call after editing workspace files with the Edit tool. Content never passes through the LLM.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -175,6 +217,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
+        let snapshot_before = null;
+        if (fs.existsSync(dir)) {
+          const snapPath = snapshotWidgetWorkspace(w.widget_name, w.widget_id, 'pre-get_widget-overwrite');
+          if (snapPath) {
+            snapshot_before = path.relative(PROJECT_ROOT, snapPath);
+          }
+        }
+
         // Save code fields to workspace — content never returned to LLM
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, 'data.html'),       w.widget_data       ?? '', 'utf8');
@@ -183,19 +233,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ widget_id: w.widget_id, widget_name: w.widget_name }), 'utf8');
 
         const safe = toSafeName(w.widget_name);
+        const payload = {
+          widget_id:    w.widget_id,
+          widget_name:  w.widget_name,
+          date_updated: w.date_updated,
+          files: {
+            data:       `workspace/${safe}/data.html`,
+            style:      `workspace/${safe}/style.css`,
+            javascript: `workspace/${safe}/javascript.js`,
+          },
+        };
+        if (snapshot_before) {
+          payload.snapshot_of_previous_workspace = `${snapshot_before}/`;
+        }
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({
-              widget_id:    w.widget_id,
-              widget_name:  w.widget_name,
-              date_updated: w.date_updated,
-              files: {
-                data:       `workspace/${safe}/data.html`,
-                style:      `workspace/${safe}/style.css`,
-                javascript: `workspace/${safe}/javascript.js`,
-              },
-            }, null, 2),
+            text: JSON.stringify(payload, null, 2),
           }],
         };
       }
@@ -206,6 +260,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!fs.existsSync(dir)) {
           throw new Error(`No workspace found for "${args.widget_name}". Call get_widget first.`);
         }
+
+        const snapPath = snapshotWidgetWorkspace(args.widget_name, args.widget_id, 'pre-push_widget');
+        const snapRel = snapPath ? path.relative(PROJECT_ROOT, snapPath) : null;
 
         // Read from disk — content never passes through LLM
         const widget_data       = fs.readFileSync(path.join(dir, 'data.html'),     'utf8');
@@ -220,8 +277,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           widget_javascript,
         });
 
+        const snapNote = snapRel
+          ? ` Pre-push snapshot: ${snapRel}/ (copy back to workspace/${toSafeName(args.widget_name)}/ to restore locally).`
+          : '';
         return {
-          content: [{ type: 'text', text: `Widget "${args.widget_name}" pushed successfully. Remember to refresh the BD site cache.` }],
+          content: [{ type: 'text', text: `Widget "${args.widget_name}" pushed successfully.${snapNote} Remember to refresh the BD site cache.` }],
         };
       }
 
