@@ -23,7 +23,7 @@ Access them in shell: `$env:BD_API_KEY` (PowerShell) or `$BD_API_KEY` (bash).
 
 At the start of every session, always:
 
-1. Read `skills/bd-workflow.md` — edit loop, validation rules, workflow
+1. Read `skills/bd-workflow.md` — edit loop, validation rules, workflow, and **Git / `main` / multiplayer** + **Vercel** sections whenever pushes affect production or shared repos
 2. Check if `mcp-server/node_modules` exists. If it does not, ask the user for permission to run `npm install` inside `mcp-server/`. If they approve, run it. If it fails, tell the user to install Node.js from https://nodejs.org (LTS version) and then try again.
 3. List all available custom widgets using the `list_widgets` MCP tool so the user knows what exists before doing anything
 

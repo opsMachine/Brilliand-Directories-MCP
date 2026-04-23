@@ -17,6 +17,36 @@ This gives the user a clear picture of what exists before any edits begin.
 
 ---
 
+## Git, `main`, and multiplayer BD
+
+Brilliant Directories has **no staging environment**: `push_widget` writes **production** immediately. When the widget files also live in a **GitHub-backed repo** (separate app code, Vercel functions, *and* tracked `workspace/{widget}/` trees), treat Git as the **revision ledger** and BD as **live execution**.
+
+### Default order: Git `main` first, then live
+
+Use this order unless the user explicitly chooses a different emergency process:
+
+1. **Fetch → edit → render** (this skill’s loop) on a **feature branch** when others may be working.
+2. **Commit** the `workspace/{widget}/` (and any related API or config) changes to that branch.
+3. **Merge to `main`** (PR or direct merge — follow the team’s gate). **`main` should contain the exact bytes you intend to go live** before you call `push_widget`, or you merge in the **same session immediately after** a live push only when fixing production under fire — in that case still land on `main` right away so the repo never lags BD.
+4. **`push_widget` last** among publish steps so “what’s on `main`” and “what’s live on BD” stay aligned for forensics, rollback, and teammates.
+
+Why: BD does not version merges for you. Two people can still collide, but **Git history on `main` should mirror intentional live state** so you are never guessing which PHP is “real.”
+
+### Reducing collisions between humans
+
+- **Claim a widget** for the working session (chat, ticket, or stand-up): one active editor per widget name when possible.
+- **Re-list before a long session or before push:** compare `date_updated` from `list_widgets` to when you fetched. If live is newer than your local session, **clear `workspace/{name}/` and `get_widget` again** before editing or pushing.
+- **Never push** after hours of idle time without confirming the widget list still matches your assumptions.
+
+### Vercel (or any host) alongside BD
+
+If the same Git repo deploys **serverless routes** (SMS, cron proxies, etc.) to Vercel:
+
+- Prefer **automatic deploys from `main`** (Git integration) for production and previews. Treat **CLI deploys** (`vercel --prod`) as exceptional; if you use them, still **commit to `main` first** so the repo matches what you shipped.
+- **Order of operations when a change touches both BD widgets and API routes:** merge API changes to `main`, let CI/Vercel deploy (or deploy once from `main`), then **`push_widget`** — or follow a written runbook if the product requires API-before-widget. Document exceptions per project.
+
+---
+
 ## The Edit Loop
 
 Every widget edit follows this exact sequence. Do not skip or reorder steps.
@@ -28,12 +58,15 @@ Every widget edit follows this exact sequence. Do not skip or reorder steps.
 4. CONFIRM → wait for explicit user approval ("yes", "go ahead", "push it", etc.)
 5. EDIT    → use Edit tool on workspace/{name}/ files
 6. RENDER  → render_widget → rebuilds preview from local workspace, browser auto-refreshes
-7. PUSH    → push_widget → reads from workspace, sends PUT to BD API
-8. VERIFY  → confirm response is "pushed successfully"
-9. REMIND  → tell user to refresh the BD site cache
+7. GIT     → when using Git: commit workspace (and related) changes; merge to `main` before live push (see “Git, `main`, and multiplayer BD”)
+8. PUSH    → push_widget → reads from workspace, sends PUT to BD API
+9. VERIFY  → confirm response is "pushed successfully"
+10. REMIND → tell user to refresh the BD site cache
 ```
 
 Never jump to step 5 without completing steps 1–4.
+
+When the project does **not** use Git for widget files, treat step 7 as “ensure backups / snapshots acceptable” and continue; otherwise **do not push live without `main` containing the same change set** (team default).
 
 Large content never passes through the LLM as tool output — `get_widget` saves to disk,
 `push_widget` reads from disk. The LLM only touches content via `Read` and `Edit` tool calls.
@@ -57,7 +90,7 @@ If the widget name is ambiguous or unconfirmed, fetch the full list first and as
 
 Only the user (or the user instructing you explicitly) may delete that folder. Never run `rm -rf` on `workspace/` unless the user asked you to discard local copies.
 
-**Push staleness risk:** There is no version check on push. If the widget was edited on BD between your fetch and your push, your push will silently overwrite those changes. Mention this to the user if the session has been open for a long time before pushing.
+**Push staleness risk:** There is no version check on push. If the widget was edited on BD between your fetch and your push, your push will silently overwrite those changes. Mention this to the user if the session has been open for a long time before pushing. **With Git:** this is the same risk plus branch skew — prefer a **fresh `get_widget`** (after clearing the local widget folder if needed) when `date_updated` on the list is newer than your last fetch, then re-apply edits on top of `main` before pushing.
 
 ---
 
