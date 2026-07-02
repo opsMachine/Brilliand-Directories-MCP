@@ -189,13 +189,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
 
       case 'list_widgets': {
-        const data = await bdRequest('GET', '/data_widgets/get');
-        const widgets = data.message.map(w => ({
+        // BD's /data_widgets/get is cursor-paginated (default 25/page, max 100).
+        // Follow next_page until it's exhausted so we return the full catalog, not just page 1.
+        const all = [];
+        let page = undefined;
+        let pageCount = 0;
+        const MAX_PAGES = 200; // safety cap against an infinite-loop bug in the API
+        do {
+          const qs = new URLSearchParams({ limit: '100' });
+          if (page) qs.set('page', page);
+          const data = await bdRequest('GET', `/data_widgets/get?${qs.toString()}`);
+          all.push(...data.message);
+          page = data.next_page || null;
+          pageCount += 1;
+        } while (page && pageCount < MAX_PAGES);
+
+        const widgets = all.map(w => ({
           id:      w.widget_id,
           name:    w.widget_name,
           updated: w.date_updated || '—',
         }));
-        return { content: [{ type: 'text', text: JSON.stringify(widgets, null, 2) }] };
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ total: widgets.length, pages_fetched: pageCount, widgets }, null, 2),
+          }],
+        };
       }
 
       case 'get_widget': {
