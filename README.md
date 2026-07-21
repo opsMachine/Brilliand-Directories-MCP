@@ -6,7 +6,7 @@ Manage your Brilliant Directories website widgets using Claude Code.
 
 ## Prerequisites
 
-- A **Claude Max** subscription (includes Claude Code)
+- A **Claude** subscription (includes Claude Code)
 - **Claude Code** installed — download at https://claude.ai/download
 - Your **BD API key** (from BD Admin → API settings)
 - Your **BD site URL** (e.g. `https://yoursite.brilliantdirectories.com`)
