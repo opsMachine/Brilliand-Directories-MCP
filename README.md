@@ -11,6 +11,7 @@ Manage your Brilliant Directories website widgets using Claude Code.
 - Your **BD API key** (from BD Admin → API settings)
 - Your **BD site URL** (e.g. `https://yoursite.brilliantdirectories.com`)
 
+You could also use this with any other MCP enabled tool, but this readme was meant for less tech-enabled users so I just went with Claude as a default.
 ---
 
 ## Setup
