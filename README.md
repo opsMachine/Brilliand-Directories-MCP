@@ -74,6 +74,16 @@ These store your API credentials securely without hardcoding them in any file.
 
 That's it — Claude handles the rest from there.
 
+### Step 4 — Enable secret scanning (recommended)
+
+After clone, enable the pre-commit hook so API keys and credentials cannot be committed by mistake:
+
+```bash
+bash scripts/setup-githooks.sh
+```
+
+Requires [gitleaks](https://github.com/gitleaks/gitleaks#installing) on your `PATH`. Each commit runs `gitleaks protect --staged` and is blocked if secrets are found. Rules and allowlists: [`.gitleaks.toml`](.gitleaks.toml).
+
 ---
 
 ## How it works

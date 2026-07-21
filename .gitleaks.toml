@@ -1,0 +1,20 @@
+# Gitleaks config for Brilliant Directories MCP. Default rules + repo-specific allowlists.
+title = "Brilliant Directories MCP gitleaks config"
+
+[allowlist]
+description = "Intentional placeholders — never allow real secrets here"
+regexes = [
+  '''REPLACE_ME''',
+  '''(?i)your[_-]?api[_-]?key[_-]?here''',
+  '''YOUR_API_KEY_HERE''',
+]
+
+[[rules]]
+id = "bd-api-key-assignment"
+description = "BD API key or site credential hardcoded in source"
+regex = '''(?i)(?:BD_API_KEY|api[_-]?key)\s*[=:]\s*['"][^'"]{20,}['"]'''
+
+[[rules]]
+id = "generic-assigned-hex-secret"
+description = "Long hex assigned to secret/key/token variable"
+regex = '''(?i)(?:secret|api[_-]?key|auth[_-]?key|token|password)\s*[=:]\s*['"][a-fA-F0-9]{32,}['"]'''
