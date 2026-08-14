@@ -2,11 +2,14 @@
 # Scan staged changes for secrets before commit. Install via: bash scripts/setup-githooks.sh
 set -euo pipefail
 
+ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$ROOT/.gitleaks.toml"
+
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "gitleaks is not installed — cannot scan for secrets." >&2
-  echo "Install: https://github.com/gitleaks/gitleaks#installing" >&2
-  echo "Then run: bash scripts/setup-githooks.sh" >&2
+  echo "Install: npm run install:gitleaks   (or bash scripts/install-gitleaks.sh)" >&2
+  echo "Then run: npm run setup:githooks" >&2
   exit 1
 fi
 
-gitleaks protect --staged --redact --verbose
+gitleaks protect --staged --redact --verbose --config "$CONFIG"

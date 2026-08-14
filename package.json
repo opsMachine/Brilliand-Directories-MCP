@@ -1,0 +1,10 @@
+{
+  "name": "brilliant-directories-mcp",
+  "private": true,
+  "description": "Brilliant Directories widget MCP — dev tooling only (not published)",
+  "scripts": {
+    "install:gitleaks": "bash scripts/install-gitleaks.sh",
+    "setup:githooks": "bash scripts/setup-githooks.sh",
+    "setup:secrets": "npm run install:gitleaks && npm run setup:githooks"
+  }
+}

@@ -76,13 +76,20 @@ That's it — Claude handles the rest from there.
 
 ### Step 4 — Enable secret scanning (recommended)
 
-After clone, enable the pre-commit hook so API keys and credentials cannot be committed by mistake:
+After clone, install gitleaks and enable the pre-commit hook so API keys and credentials cannot be committed by mistake:
 
 ```bash
-bash scripts/setup-githooks.sh
+npm run setup:secrets
 ```
 
-Requires [gitleaks](https://github.com/gitleaks/gitleaks#installing) on your `PATH`. Each commit runs `gitleaks protect --staged` and is blocked if secrets are found. Rules and allowlists: [`.gitleaks.toml`](.gitleaks.toml).
+Or manually:
+
+```bash
+bash scripts/install-gitleaks.sh   # ~/.local/bin/gitleaks
+bash scripts/setup-githooks.sh     # core.hooksPath=.githooks
+```
+
+Each commit runs `gitleaks protect --staged` against [`.gitleaks.toml`](.gitleaks.toml) and is blocked if secrets are found.
 
 ---
 
