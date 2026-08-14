@@ -55,6 +55,16 @@ async function bdRequest(method, endpoint, body) {
   return data;
 }
 
+/** Strip fields BD never returns via API but may appear in error payloads. */
+function sanitizeUserRecord(user) {
+  if (!user || typeof user !== 'object') return user;
+  const out = { ...user };
+  for (const key of ['password', 'token', 'cookie']) {
+    delete out[key];
+  }
+  return out;
+}
+
 function toSafeName(name) {
   return name.replace(/[<>:"/\\|?*\s]/g, '-');
 }
@@ -134,7 +144,7 @@ function ensurePreviewServer() {
 // ── Server ─────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'Brilliant Directories Widgets MCP', version: '1.2.0' },
+  { name: 'Brilliant Directories Widgets MCP', version: '1.3.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -177,6 +187,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           widget_name: { type: 'string', description: 'Exact widget name (used for the filename)' },
         },
         required: ['widget_name'],
+      },
+    },
+    {
+      name: 'get_user',
+      description:
+        'Read-only lookup of BD members (API v2 user → users_data). Returns sanitized JSON (password/token/cookie omitted). Provide user_id for one member, or property + property_value to filter (e.g. email, active). Read-only — does not write to workspace/.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          user_id: {
+            type: 'string',
+            description: 'Numeric user_id — retrieve a single member',
+          },
+          property: {
+            type: 'string',
+            description: 'Field name to filter on (email, first_name, last_name, active, subscription_id, …)',
+          },
+          property_value: {
+            type: 'string',
+            description: 'Value to match against property',
+          },
+          property_operator: {
+            type: 'string',
+            description: 'Match operator: = (default) or LIKE',
+          },
+          limit: {
+            type: 'number',
+            description: 'Results per page when filtering (20–100, default 25)',
+          },
+          page: {
+            type: 'string',
+            description: 'Pagination token from a prior response next_page field',
+          },
+        },
       },
     },
   ],
@@ -308,6 +352,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           : '';
         return {
           content: [{ type: 'text', text: `Widget "${args.widget_name}" pushed successfully.${snapNote} Remember to refresh the BD site cache.` }],
+        };
+      }
+
+      case 'get_user': {
+        const hasId = args.user_id != null && String(args.user_id).trim() !== '';
+        const hasFilter =
+          args.property != null &&
+          String(args.property).trim() !== '' &&
+          args.property_value != null &&
+          String(args.property_value).trim() !== '';
+
+        if (hasId && hasFilter) {
+          throw new Error('Provide either user_id or property + property_value, not both.');
+        }
+        if (!hasId && !hasFilter) {
+          throw new Error('Provide user_id, or property + property_value.');
+        }
+
+        let data;
+        if (hasId) {
+          data = await bdRequest('GET', `/user/get/${encodeURIComponent(String(args.user_id).trim())}`);
+        } else {
+          const qs = new URLSearchParams({
+            property: String(args.property).trim(),
+            property_value: String(args.property_value).trim(),
+          });
+          if (args.property_operator != null && String(args.property_operator).trim() !== '') {
+            qs.set('property_operator', String(args.property_operator).trim());
+          }
+          if (args.limit != null) {
+            qs.set('limit', String(Math.min(100, Math.max(20, Number(args.limit) || 25))));
+          }
+          if (args.page != null && String(args.page).trim() !== '') {
+            qs.set('page', String(args.page).trim());
+          }
+          data = await bdRequest('GET', `/user/get?${qs.toString()}`);
+        }
+
+        const rows = Array.isArray(data.message) ? data.message : data.message ? [data.message] : [];
+        const users = rows.map(sanitizeUserRecord);
+        const payload = {
+          count: users.length,
+          users,
+        };
+        if (data.next_page) payload.next_page = data.next_page;
+        if (data.last_page) payload.last_page = data.last_page;
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
         };
       }
 
